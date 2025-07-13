@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.12.14",
     "matplotlib>=3.10.3",
     "mplfinance>=0.12.10b0",
+    "numpy>=2.3.1",
     "pandas>=2.3.1",
     "patterns>=0.1.2",
     "python-dotenv>=1.1.1",

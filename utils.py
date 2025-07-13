@@ -1,91 +1,16 @@
-import os
-import aiohttp
-import mplfinance as mpf
-import pandas as pd
-from io import BytesIO
+import os import requests import pandas as pd from dotenv import load_dotenv
 
-# Match these to your .env file
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+load_dotenv()
 
-async def send_telegram_message(text):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("Telegram credentials missing!")
-        return
+BASE_URL = "https://fapi.binance.com"
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": text}
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data) as response:
-                if response.status != 200:
-                    error = await response.text()
-                    print(f"Telegram error: {error}")
-                return await response.text()
-    except Exception as e:
-        print(f"Telegram send failed: {e}")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-async def generate_chart(df, symbol):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("Telegram credentials missing!")
-        return
+def get_ohlcv(symbol, interval="15m", limit=100): url = f"{BASE_URL}/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}" res = requests.get(url).json() df = pd.DataFrame(res, columns=['time','open','high','low','close','volume','c1','c2','c3','c4','c5','c6']) df = df[['time','open','high','low','close','volume']].astype(float) df['time'] = pd.to_datetime(df['time'], unit='ms') return df
 
-    try:
-        # Create a copy to avoid modifying original
-        df = df.copy()
+def send_photo(bot, photo_path, caption): with open(photo_path, "rb") as photo: bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo, caption=caption)
 
-        # Correct column names (Binance API returns these exact names)
-        df = df[['open_time', 'open', 'high', 'low', 'close', 'volume']]
+def send_message(bot, message): bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
 
-        # Convert timestamp to datetime index
-        df.index = pd.to_datetime(df['open_time'], unit='ms')
+def calculate_atr(df, period=14): df['H-L'] = df['high'] - df['low'] df['H-PC'] = abs(df['high'] - df['close'].shift(1)) df['L-PC'] = abs(df['low'] - df['close'].shift(1)) tr = df[['H-L', 'H
 
-        # Rename columns to match mplfinance requirements
-        df = df.rename(columns={
-            'open': 'Open',
-            'high': 'High',
-            'low': 'Low',
-            'close': 'Close',
-            'volume': 'Volume'
-        })
-
-        # Get last 100 candles
-        plot_df = df[['Open', 'High', 'Low', 'Close', 'Volume']].tail(100)
-
-        # Create in-memory image
-        buf = BytesIO()
-        mpf.plot(
-            plot_df, 
-            type='candle', 
-            style='charles',
-            title=f"{symbol} 15m",
-            volume=True,
-            savefig=dict(fname=buf, dpi=100, pad_inches=0.25)
-        )
-        buf.seek(0)
-
-        # Send via Telegram
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
-        form_data = aiohttp.FormData()
-        form_data.add_field('chat_id', CHAT_ID)
-        form_data.add_field('photo', buf, filename=f'{symbol}.png')
-
-        async with aiohttp.ClientSession() as session:
-            await session.post(url, data=form_data)
-
-    except Exception as e:
-        error_msg = f"🚨 Chart error for {symbol}: {str(e)[:200]}"
-        print(error_msg)
-        await send_telegram_message(error_msg)
-
-def detect_patterns(df):
-    try:
-        # Simple pattern detection - replace with your actual logic
-        current = df.iloc[-1]
-        prev = df.iloc[-2]
-
-        # Bullish pattern: green candle after red candle
-        return current['close'] > current['open'] and prev['close'] < prev['open']
-    except Exception as e:
-        print(f"Pattern detection error: {e}")
-        return False

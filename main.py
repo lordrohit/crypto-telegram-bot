@@ -2,12 +2,12 @@ import os
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
+import mplfinance as mpf
 from dotenv import load_dotenv
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
-import mplfinance as mpf
 from telegram.ext import Updater, CommandHandler
-from patterns import detect_all_patterns
+from patterns_custom import detect_all_patterns
 from strategy import calculate_trade_levels
 
 load_dotenv()
@@ -33,72 +33,63 @@ def create_chart(df, symbol):
     df_chart = df.copy()
     df_chart.set_index('time', inplace=True)
     df_chart.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-
     apds = [
         mpf.make_addplot(df['EMA20'], color='orange'),
-        mpf.make_addplot(df['EMA50'], color='red'),
+        mpf.make_addplot(df['EMA50'], color='red')
     ]
-
     filename = f"{symbol}_chart.png"
-    mpf.plot(df_chart, type='candle', style='yahoo', addplot=apds,
-             title=f"{symbol} Chart (15m)", volume=True, savefig=filename)
+    mpf.plot(df_chart, type='candle', style='yahoo', addplot=apds, title=f"{symbol} Chart (15m)", volume=True, savefig=filename)
     return filename
 
-def send_photo(context, photo_path, caption):
+def send_photo(bot, photo_path, caption):
     with open(photo_path, "rb") as photo:
-        context.bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo, caption=caption)
+        bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo, caption=caption)
 
 def analyze(update, context):
     if not context.args:
         update.message.reply_text("Usage: /analyze btc")
         return
-
     symbol = context.args[0].upper() + "USDT"
     try:
         df = get_ohlcv(symbol)
         df['EMA20'] = EMAIndicator(df['close'], window=20).ema_indicator()
         df['EMA50'] = EMAIndicator(df['close'], window=50).ema_indicator()
         df['RSI'] = RSIIndicator(df['close'], window=14).rsi()
-
         patterns = detect_all_patterns(df)
         levels = calculate_trade_levels(df)
 
-        if patterns and levels['rr'] >= 1.5:
+        if patterns:
             chart = create_chart(df, symbol)
             caption = (
                 f"🧠 {', '.join(patterns)}\n"
                 f"📊 Symbol: {symbol}\n"
                 f"📈 Entry: {levels['entry']}\n"
-                f"🎯 TP: {levels['tp']}\n"
+                f"🌟 TP: {levels['tp']}\n"
                 f"🛡 SL: {levels['sl']}\n"
                 f"⚖ R:R = {levels['rr']}"
             )
-            send_photo(context, chart, caption)
+            send_photo(context.bot, chart, caption)
         else:
             context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"📉 No good setup found for {symbol}")
-
     except Exception as e:
         context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"⚠️ Error: {e}")
 
+from autoscan import run_auto_scan
+from threading import Thread
+import time
+
+def auto_scan_loop():
+    while True:
+        run_auto_scan(updater.bot)
+        time.sleep(600)
+
+def start_auto_scan():
+    thread = Thread(target=auto_scan_loop)
+    thread.daemon = True
+    thread.start()
+
+start_auto_scan()
 dispatcher.add_handler(CommandHandler("analyze", analyze))
-
-if __name__ == "__main__":
-    print("🤖 Bot running... use /analyze btc")
-    updater.start_polling()
-
-    from threading import Thread
-    from autoscan import run_auto_scan
-    import time
-
-    def auto_scan_loop(context):
-        while True:
-            run_auto_scan(context)
-            time.sleep(600)
-
-    def start_auto_scan(context):
-        thread = Thread(target=auto_scan_loop, args=(context,))
-        thread.daemon = True
-        thread.start()
-
-    start_auto_scan(updater.bot)
-    updater.idle()
+print("🤖 Bot running... use /analyze btc")
+updater.start_polling()
+updater.idle()
