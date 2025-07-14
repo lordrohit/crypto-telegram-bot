@@ -6,10 +6,11 @@ import mplfinance as mpf
 from dotenv import load_dotenv
 from ta.trend import EMAIndicator
 from ta.momentum import RSIIndicator
-from telegram.ext import Updater, CommandHandler
-from patterns_custom import detect_all_patterns
-from strategy import calculate_trade_levels
 
+from telegram.ext import Updater, CommandHandler
+from autoscan import run_auto_scan
+
+# Load environment variables
 load_dotenv()
 
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
@@ -18,78 +19,56 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 BASE_URL = "https://fapi.binance.com"
 
+# Set up Telegram bot
 updater = Updater(token=TELEGRAM_BOT_TOKEN, use_context=True)
 dispatcher = updater.dispatcher
 
+# ========== COMMAND HANDLERS ==========
+
+def handle_longs_command(update, context):
+    bot = context.bot
+    chat_id = update.effective_chat.id
+    bot.send_message(chat_id=chat_id, text="🟢 Scanning for bullish trade setups...")
+    run_auto_scan(bot, mode="bullish")
+
+def handle_shorts_command(update, context):
+    bot = context.bot
+    chat_id = update.effective_chat.id
+    bot.send_message(chat_id=chat_id, text="🔴 Scanning for bearish trade setups...")
+    run_auto_scan(bot, mode="bearish")
+
+# Register commands
+dispatcher.add_handler(CommandHandler("longs", handle_longs_command))
+dispatcher.add_handler(CommandHandler("shorts", handle_shorts_command))
+
+# ========== OHLCV FETCHER (USED BY autoscan) ==========
+
 def get_ohlcv(symbol, interval="15m", limit=100):
     url = f"{BASE_URL}/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    res = requests.get(url).json()
-    df = pd.DataFrame(res, columns=['time','open','high','low','close','volume','c1','c2','c3','c4','c5','c6'])
-    df = df[['time','open','high','low','close','volume']].astype(float)
-    df['time'] = pd.to_datetime(df['time'], unit='ms')
-    return df
-
-def create_chart(df, symbol):
-    df_chart = df.copy()
-    df_chart.set_index('time', inplace=True)
-    df_chart.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-    apds = [
-        mpf.make_addplot(df['EMA20'], color='orange'),
-        mpf.make_addplot(df['EMA50'], color='red')
-    ]
-    filename = f"{symbol}_chart.png"
-    mpf.plot(df_chart, type='candle', style='yahoo', addplot=apds, title=f"{symbol} Chart (15m)", volume=True, savefig=filename)
-    return filename
-
-def send_photo(bot, photo_path, caption):
-    with open(photo_path, "rb") as photo:
-        bot.send_photo(chat_id=TELEGRAM_CHAT_ID, photo=photo, caption=caption)
-
-def analyze(update, context):
-    if not context.args:
-        update.message.reply_text("Usage: /analyze btc")
-        return
-    symbol = context.args[0].upper() + "USDT"
     try:
-        df = get_ohlcv(symbol)
-        df['EMA20'] = EMAIndicator(df['close'], window=20).ema_indicator()
-        df['EMA50'] = EMAIndicator(df['close'], window=50).ema_indicator()
-        df['RSI'] = RSIIndicator(df['close'], window=14).rsi()
-        patterns = detect_all_patterns(df)
-        levels = calculate_trade_levels(df)
+        res = requests.get(url)
+        res.raise_for_status()
+        data = res.json()
 
-        if patterns:
-            chart = create_chart(df, symbol)
-            caption = (
-                f"🧠 {', '.join(patterns)}\n"
-                f"📊 Symbol: {symbol}\n"
-                f"📈 Entry: {levels['entry']}\n"
-                f"🌟 TP: {levels['tp']}\n"
-                f"🛡 SL: {levels['sl']}\n"
-                f"⚖ R:R = {levels['rr']}"
-            )
-            send_photo(context.bot, chart, caption)
-        else:
-            context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"📉 No good setup found for {symbol}")
+        # Create dataframe
+        df = pd.DataFrame(data, columns=[
+            "timestamp", "open", "high", "low", "close",
+            "volume", "close_time", "quote_asset_volume",
+            "num_trades", "taker_buy_base_volume",
+            "taker_buy_quote_volume", "ignore"
+        ])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df.set_index("timestamp", inplace=True)
+        df = df.astype(float)
+        return df
+
     except Exception as e:
-        context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"⚠️ Error: {e}")
+        print(f"❌ Error fetching OHLCV for {symbol}: {e}")
+        return None
 
-from autoscan import run_auto_scan
-from threading import Thread
-import time
+# ========== START THE BOT ==========
 
-def auto_scan_loop():
-    while True:
-        run_auto_scan(updater.bot)
-        time.sleep(600)
-
-def start_auto_scan():
-    thread = Thread(target=auto_scan_loop)
-    thread.daemon = True
-    thread.start()
-
-start_auto_scan()
-dispatcher.add_handler(CommandHandler("analyze", analyze))
-print("🤖 Bot running... use /analyze btc")
-updater.start_polling()
-updater.idle()
+if __name__ == '__main__':
+    print("🚀 Bot started!")
+    updater.start_polling()
+    updater.idle()
