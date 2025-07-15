@@ -28,7 +28,7 @@ dispatcher = updater.dispatcher
 # ========== COMMAND HANDLERS ==========
 
 def handle_longs_command(update, context):
-    bot = context.bot
+    bot = context.bot# Trigger redeploy
     chat_id = update.effective_chat.id
     bot.send_message(chat_id=chat_id, text="🟢 Scanning for bullish trade setups...")
     run_auto_scan(bot, mode="bullish")
