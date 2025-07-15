@@ -1,4 +1,6 @@
 import os
+os.system("pip uninstall telegram -y")
+import os
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
