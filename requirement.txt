@@ -6,4 +6,3 @@ mplfinance
 ta
 python-dotenv
 requests
-telegram
