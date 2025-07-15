@@ -1,6 +1,6 @@
 import os
-os.system("pip uninstall telegram -y")
-import os
+os.system("pip uninstall telegram -y")  # Force remove wrong telegram package
+
 import requests
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -28,7 +28,7 @@ dispatcher = updater.dispatcher
 # ========== COMMAND HANDLERS ==========
 
 def handle_longs_command(update, context):
-    bot = context.bot# Trigger redeploy
+    bot = context.bot
     chat_id = update.effective_chat.id
     bot.send_message(chat_id=chat_id, text="🟢 Scanning for bullish trade setups...")
     run_auto_scan(bot, mode="bullish")
