@@ -74,3 +74,4 @@ if __name__ == '__main__':
     print("🚀 Bot started!")
     updater.start_polling()
     updater.idle()
+    print("✅ Bot is running!")
